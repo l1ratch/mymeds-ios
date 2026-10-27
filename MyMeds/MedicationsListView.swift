@@ -35,40 +35,42 @@ struct MedicationsListView: View {
     }
 
     var body: some View {
-        ZStack {
-            AppBackground()
-            VStack(spacing: 12) {
-                Picker("", selection: $segment) {
-                    ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+        VStack(spacing: 0) {
+            Picker("", selection: $segment) {
+                ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
 
-                ScrollView {
-                    VStack(spacing: 12) {
-                        Button {
-                            showConstructor = true
-                        } label: {
-                            Label("Новый план", systemImage: "plus.circle.fill")
-                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(12)
-                        }
-                        .buttonStyle(.glass)
-                        if segment == .active {
+            List {
+                Section {
+                    Button {
+                        showConstructor = true
+                    } label: {
+                        Label("Новый план", systemImage: "plus.circle.fill")
+                    }
+                }
+                if segment == .active {
+                    Section("Активные") {
+                        if activeMedications.isEmpty {
+                            emptyRow("Пока нет ни одного раздела",
+                                     hint: "Создайте план кнопкой выше или импортируйте файл medplan/1 в настройках")
+                        } else {
                             ForEach(activeMedications) { med in
                                 NavigationLink {
                                     MedicationDetailView(medication: med)
                                 } label: {
                                     MedicationRow(medication: med)
                                 }
-                                .buttonStyle(.plain)
                             }
-                            if activeMedications.isEmpty {
-                                emptyText("Нет активных разделов",
-                                          hint: "Импортируйте план в настройках")
-                            }
+                        }
+                    }
+                } else {
+                    Section("Завершённые планы") {
+                        if finishedPlans.isEmpty {
+                            emptyRow("Архив пуст",
+                                     hint: "Сюда попадают планы, у которых закончились дни")
                         } else {
                             ForEach(finishedPlans) { plan in
                                 NavigationLink {
@@ -76,34 +78,25 @@ struct MedicationsListView: View {
                                 } label: {
                                     ArchiveRow(plan: plan)
                                 }
-                                .buttonStyle(.plain)
-                            }
-                            if finishedPlans.isEmpty {
-                                emptyText("Архив пуст",
-                                          hint: "Сюда попадают завершённые планы")
                             }
                         }
                     }
-                    .padding(16)
                 }
             }
+            .listStyle(.insetGrouped)
         }
         .navigationTitle("Разделы")
-        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showConstructor) {
             PlanConstructorView()
         }
     }
 
-    private func emptyText(_ title: String, hint: String) -> some View {
-        GlassCard {
-            VStack(spacing: 8) {
-                Text(title).font(.system(.headline, design: .rounded))
-                Text(hint).font(.caption).foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(20)
+    private func emptyRow(_ title: String, hint: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.headline).foregroundStyle(.primary)
+            Text(hint).font(.caption).foregroundStyle(.secondary)
         }
+        .padding(.vertical, 6)
     }
 }
 
@@ -126,48 +119,33 @@ struct MedicationRow: View {
     }
 
     var body: some View {
-        GlassCard(tint: medication.accent.opacity(0.22)) {
-            HStack(spacing: 14) {
-                Circle()
-                    .fill(medication.accent)
-                    .frame(width: 12, height: 12)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(medication.name)
-                        .font(.system(.body, design: .rounded).weight(.semibold))
-                        .foregroundStyle(.primary)
-                    if let plan = currentPlan {
-                        let stats = Stats.planStats(plan: plan, data: store.data, today: today)
-                        Text(plan.name)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        HStack(spacing: 8) {
-                            Text("день \(max(stats.elapsedDays, 0)) из \(plan.durationDays)")
-                            if stats.progress > 0 {
-                                ProgressView(value: stats.progress)
-                                    .frame(width: 70)
-                                    .tint(medication.accent)
-                            }
-                        }
-                        .font(.caption2)
+        HStack(spacing: 12) {
+            Circle()
+                .fill(medication.accent)
+                .frame(width: 10, height: 10)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(medication.name)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                if let plan = currentPlan {
+                    let stats = Stats.planStats(plan: plan, data: store.data, today: today)
+                    Text("\(plan.name) · день \(max(stats.elapsedDays, 0)) из \(plan.durationDays)")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                    } else {
-                        Text("нет активных планов")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                } else {
+                    Text("нет активных планов")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Spacer()
-                GlassBadge(
-                    label: doseText(
-                        Stats.medicationCumulative(medicationId: medication.id, data: store.data, today: today),
-                        unit: medication.unit),
-                    icon: "sum",
-                    color: medication.accent)
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
             }
+            Spacer(minLength: 8)
+            Text(doseText(
+                Stats.medicationCumulative(medicationId: medication.id, data: store.data, today: today),
+                unit: medication.unit))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 2)
     }
 }
 
@@ -182,24 +160,22 @@ struct ArchiveRow: View {
         let stats = Stats.planStats(plan: plan, data: store.data)
         let med = medication
         let unit = med?.unit ?? .mg
-        return GlassCard(tint: med?.accent.opacity(0.12)) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(med?.name ?? "?") · \(plan.name)")
-                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                        .foregroundStyle(.primary)
-                    if let start = plan.startDate, let last = PlanStatus.lastDay(of: plan) {
-                        Text("\(start.description) – \(last.description)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    Text("принято \(stats.taken) · \(doseText(stats.cumulativeDose, unit: unit))")
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(med?.name ?? "—") · \(plan.name)")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                if let start = plan.startDate, let last = PlanStatus.lastDay(of: plan) {
+                    Text("\(start.description) – \(last.description)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                GlassBadge(label: "завершён", icon: "checkmark.seal", color: .gray)
             }
+            Spacer(minLength: 8)
+            Text("\(stats.taken) · \(doseText(stats.cumulativeDose, unit: unit))")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 2)
     }
 }

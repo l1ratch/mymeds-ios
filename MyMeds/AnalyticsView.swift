@@ -39,22 +39,40 @@ struct AnalyticsView: View {
     }
 
     var body: some View {
-        ZStack {
-            AppBackground()
-            ScrollView {
-                VStack(spacing: 16) {
-                    periodPicker
-                    adherenceCard
-                    streakCard
-                    heatmapCard
-                    markTimeCard
-                    medicationsSection
+        List {
+            Section {
+                periodPicker
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            }
+            Section {
+                adherenceCard
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            }
+            Section {
+                streakRow
+                LabeledContent("Среднее время отметки") {
+                    Text(medianTimeText)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(16)
+            }
+            Section("Текущий месяц") {
+                heatmapCard
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            }
+            Section("По лекарствам") {
+                ForEach(store.data.medications) { med in
+                    medRow(med)
+                }
             }
         }
+        .listStyle(.insetGrouped)
         .navigationTitle("Аналитика")
-        .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedDay) { day in
             CalendarDaySheet(date: day.date)
         }
@@ -100,23 +118,22 @@ struct AnalyticsView: View {
         }
     }
 
-    private var streakCard: some View {
-        GlassCard {
-            HStack(spacing: 16) {
-                MascotView(streak: streak, size: 1.6)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Серия")
-                        .font(.system(.headline, design: .rounded))
-                        .foregroundStyle(.primary)
-                    Text(streak == 0
-                         ? "Отметь все приёмы сегодня — огонёк оживёт"
-                         : "\(streak) дн. подряд всё принято · уровни: 7 / 30 / 100")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
+    private var streakRow: some View {
+        HStack(spacing: 14) {
+            MascotView(streak: streak, size: 1.3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Серия")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text(streak == 0
+                     ? "Отметь все приёмы сегодня — огонёк оживёт"
+                     : "\(streak) дн. подряд всё принято")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            Spacer(minLength: 0)
         }
+        .padding(.vertical, 4)
     }
 
     private var heatmapCard: some View {
@@ -135,20 +152,6 @@ struct AnalyticsView: View {
         }
     }
 
-    private var markTimeCard: some View {
-        GlassCard {
-            HStack {
-                Label("Среднее время отметки", systemImage: "clock")
-                    .font(.system(.subheadline, design: .rounded))
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text(medianTimeText)
-                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
     private var medianTimeText: String {
         guard let minutes = Analytics.medianMarkMinutes(data: store.data) else { return "—" }
         return String(format: "%02d:%02d", minutes / 60, minutes % 60)
@@ -156,41 +159,41 @@ struct AnalyticsView: View {
 
     /// Оверлеи по лекарствам: кумулятивная доза всегда; % цели, мг/кг и прогноз —
     /// только если поля заполнены (§7).
-    private var medicationsSection: some View {
-        ForEach(store.data.medications) { med in
-            let overlay = Analytics.overlay(medicationId: med.id, data: store.data, today: today)
-            GlassCard(tint: med.accent.opacity(0.15)) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(med.name)
-                        .font(.system(.headline, design: .rounded))
-                        .foregroundStyle(.primary)
-                    Text("принято \(doseText(overlay.cumulativeDose, unit: med.unit))"
-                         + " · за 14 дн ≈ \(doseText(overlay.avgDailyDose14, unit: med.unit))/день")
-                        .font(.caption)
+    private func medRow(_ med: Medication) -> some View {
+        let overlay = Analytics.overlay(medicationId: med.id, data: store.data, today: today)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(med.name)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Text(doseText(overlay.cumulativeDose, unit: med.unit))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            Text("за 14 дн ≈ \(doseText(overlay.avgDailyDose14, unit: med.unit))/день")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let percent = overlay.percentOfTarget {
+                HStack(spacing: 8) {
+                    ProgressView(value: min(percent, 100) / 100)
+                        .tint(med.accent)
+                    Text("\(Int(percent))%")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
-                    if let percent = overlay.percentOfTarget, let target = med.cumulativeTarget {
-                        HStack {
-                            ProgressView(value: min(percent, 100) / 100)
-                                .tint(med.accent)
-                            Text("\(Int(percent))% от \(doseText(target, unit: med.unit))")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    if let mgkg = overlay.mgPerKgDay {
-                        Text(String(format: "%.2f %@/кг/день", mgkg, med.unit.title))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let days = overlay.daysToTarget {
-                        Label(days == 0 ? "цель достигнута" : "до цели ≈ \(days) дн.",
-                              systemImage: "target")
-                            .font(.caption)
-                            .foregroundStyle(days == 0 ? .green : .secondary)
-                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let mgkg = overlay.mgPerKgDay {
+                Text(String(format: "%.2f %@/кг/день", mgkg, med.unit.title))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let days = overlay.daysToTarget {
+                Text(days == 0 ? "Цель достигнута" : "До цели ≈ \(days) дн.")
+                    .font(.caption)
+                    .foregroundStyle(days == 0 ? .green : .secondary)
             }
         }
+        .padding(.vertical, 4)
     }
 }

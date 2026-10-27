@@ -20,9 +20,7 @@ struct NotifySettingsSheet: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                AppBackground()
-                Form {
+            Form {
                     Section {
                         Toggle("Напоминания", isOn: $enabled)
                     }
@@ -43,8 +41,6 @@ struct NotifySettingsSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                }
-                .scrollContentBackground(.hidden)
             }
             .navigationTitle(medication.name)
             .navigationBarTitleDisplayMode(.inline)

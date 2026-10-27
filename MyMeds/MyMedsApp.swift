@@ -12,12 +12,8 @@ struct MyMedsApp: App {
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
+            RootView()
                 .environment(store)
-                .task {
-                    NotificationSetup.requestAuthorization()
-                    NotificationSetup.reschedule()
-                }
         }
         .onChange(of: scenePhase) { _, phase in
             // Перевзвод скользящего окна при выходе на foreground (§8);

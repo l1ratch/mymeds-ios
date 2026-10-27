@@ -34,9 +34,7 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                AppBackground()
-                List {
+            List {
                     Section("Данные") {
                         Button {
                             exportBackup()
@@ -98,9 +96,8 @@ struct SettingsView: View {
                             .foregroundStyle(.orange)
                         }
                     }
-                }
-                .scrollContentBackground(.hidden)
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Настройки")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

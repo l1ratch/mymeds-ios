@@ -27,20 +27,23 @@ struct CalendarView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     monthHeader
-                    weekdayHeader
-                    HeatmapGrid(
-                        cells: cells,
-                        summaries: MonthLayout.summaries(data: store.data, cells: cells, today: today),
-                        today: today
-                    ) { date in
-                        selectedDay = SelectedDay(date: date)
+                    GlassCard {
+                        VStack(spacing: 10) {
+                            weekdayHeader
+                            HeatmapGrid(
+                                cells: cells,
+                                summaries: MonthLayout.summaries(data: store.data, cells: cells, today: today),
+                                today: today
+                            ) { date in
+                                selectedDay = SelectedDay(date: date)
+                            }
+                        }
                     }
                 }
                 .padding(16)
             }
         }
         .navigationTitle("Календарь")
-        .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedDay) { day in
             CalendarDaySheet(date: day.date)
         }
@@ -92,27 +95,25 @@ struct CalendarDaySheet: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                AppBackground()
-                ScrollView {
-                    VStack(spacing: 12) {
-                        let items = store.items(on: date)
-                        if items.isEmpty {
-                            Text("В этот день приёмов нет")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .padding(40)
-                        } else {
-                            ForEach(items) { item in
-                                IntakeRow(item: item,
-                                          onDetail: { detailItem = item },
-                                          onError: { errorText = $0 })
-                            }
-                        }
+            List {
+                let items = store.items(on: date)
+                if items.isEmpty {
+                    Text("В этот день приёмов нет")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                } else {
+                    ForEach(items) { item in
+                        IntakeRow(item: item,
+                                  onDetail: { detailItem = item },
+                                  onError: { errorText = $0 })
                     }
-                    .padding(16)
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle(date.humanText)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
