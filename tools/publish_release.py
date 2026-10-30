@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 APP_VERSION_FILE = "MyMedsCore/Sources/MyMedsCore/AppVersion.swift"
-DEFAULT_REPO = "Vibe-Moments-Technologies/mymeds-ios"
+DEFAULT_REPO = "l1ratch/mymeds-ios"
 APP_TITLE = "Мои Лекарства"
 
 

@@ -16,7 +16,7 @@ public enum AppVersion {
     /// Числовой код сборки (CFBundleVersion) — epoch-секунды. Патчится CI.
     public static let buildNumber = 0
     public static let commitSha = "local"
-    public static let githubRepo = "Vibe-Moments-Technologies/mymeds-ios"
+    public static let githubRepo = "l1ratch/mymeds-ios"
     /// «Что нового» — идёт в ноты GitHub Release и фиды обновлений.
     public static let changelog = """
     Первая dev-сборка: модель данных, резолв дня, хранение в App Group.
