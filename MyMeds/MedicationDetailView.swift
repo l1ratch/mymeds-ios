@@ -7,6 +7,7 @@ import DesignSystem
 struct MedicationDetailView: View {
     let medication: Medication
     @Environment(DataStore.self) private var store
+    @State private var editing = false
 
     private var today: CivilDate { .today() }
 
@@ -48,6 +49,14 @@ struct MedicationDetailView: View {
         }
         .navigationTitle(medication.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Изменить") { editing = true }
+            }
+        }
+        .sheet(isPresented: $editing) {
+            MedicationEditSheet(medication: medication)
+        }
     }
 
     private var headerCard: some View {

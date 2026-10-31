@@ -138,6 +138,20 @@ public final class DataStore {
         try persist()
     }
 
+    /// Создать или обновить лекарство (конфигуратор в настройках).
+    public func upsertMedication(_ medication: Medication) throws {
+        if let idx = data.medications.firstIndex(where: { $0.id == medication.id }) {
+            data.medications[idx] = medication
+        } else {
+            data.medications.append(medication)
+        }
+        try persist()
+    }
+
+    /// Синхронизация с сервером — заготовка «на будущее» (решение 31.10.2026).
+    /// Локальное хранилище — источник истины; сервер вернётся реализацией протокола.
+    public let sync: any SyncService = LocalOnlySync()
+
     // MARK: - Настройки (§8: гибкость на лекарство)
 
     /// Перечитать с диска: в фоне данные мог изменить другой писатель

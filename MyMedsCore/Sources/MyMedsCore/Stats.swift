@@ -94,19 +94,25 @@ public enum Stats {
         var out: [DaySummary] = []
         var date = from
         while date <= to {
-            let entries = DayResolver.entries(plans: data.plans, on: date)
-            var taken = 0
-            for entry in entries {
-                let intake = data.intakes.first {
-                    $0.planId == entry.planId && $0.day == entry.day
-                }
-                if StatusResolver.status(intake: intake, on: date, today: today) == .taken {
-                    taken += 1
-                }
-            }
-            out.append(DaySummary(date: date, total: entries.count, taken: taken))
+            out.append(daySummary(data: data, on: date, today: today))
             date = date.adding(days: 1)
         }
         return out
+    }
+
+    /// Сводка одного дня — для траектории календаря и любых поточечных нужд.
+    public static func daySummary(data: AppData, on date: CivilDate,
+                                  today: CivilDate = .today()) -> DaySummary {
+        let entries = DayResolver.entries(plans: data.plans, on: date)
+        var taken = 0
+        for entry in entries {
+            let intake = data.intakes.first {
+                $0.planId == entry.planId && $0.day == entry.day
+            }
+            if StatusResolver.status(intake: intake, on: date, today: today) == .taken {
+                taken += 1
+            }
+        }
+        return DaySummary(date: date, total: entries.count, taken: taken)
     }
 }

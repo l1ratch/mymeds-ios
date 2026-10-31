@@ -4,13 +4,11 @@ import DesignSystem
 import UniformTypeIdentifiers
 import UserNotifications
 
-/// Настройки (§12): кнопка-шестерёнка сверху Home.
-/// Данные: экспорт бэкапа, импорт medplan/1 (через предпросмотр) и
-/// mymeds-backup/1 (полное восстановление с подтверждением).
-/// Уведомления: окна на лекарство, бюджет «X из 64», горизонт дней (§8).
+/// Настройки — отдельная страница (решение 31.10.2026): конфигуратор лекарств
+/// и блоков, уведомления с бюджетом «X из 64», синхронизация (заготовка),
+/// данные (экспорт/импорт/восстановление), сведения о приложении.
 struct SettingsView: View {
     @Environment(DataStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
 
     @State private var showImporter = false
     @State private var shareURL: IdentifiableURL?
@@ -18,6 +16,8 @@ struct SettingsView: View {
     @State private var planToImport: PendingPlan?
     @State private var errorText: String?
     @State private var editingMed: Medication?
+    @State private var creatingMed = false
+    @State private var showConstructor = false
     @State private var authStatus: UNAuthorizationStatus?
 
     struct PendingBackup: Identifiable {
@@ -32,79 +32,104 @@ struct SettingsView: View {
         let file: MedPlanFile
     }
 
+    private var sortedPlans: [Plan] {
+        store.data.plans.sorted {
+            ($0.startDate?.daysSinceEpoch ?? Int.max) < ($1.startDate?.daysSinceEpoch ?? Int.max)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                    Section("Данные") {
-                        Button {
-                            exportBackup()
+                Section("Лекарства и блоки") {
+                    ForEach(store.data.medications) { med in
+                        NavigationLink {
+                            MedicationDetailView(medication: med)
                         } label: {
-                            Label("Экспорт данных (JSON)", systemImage: "square.and.arrow.up")
-                        }
-                        Button {
-                            showImporter = true
-                        } label: {
-                            Label("Импорт плана или бэкапа", systemImage: "square.and.arrow.down")
-                        }
-                        LabeledContent("Лекарств") { Text("\(store.data.medications.count)") }
-                        LabeledContent("Планов") { Text("\(store.data.plans.count)") }
-                        LabeledContent("Отметок") { Text("\(store.data.intakes.count)") }
-                    }
-                    Section("Приложение") {
-                        LabeledContent("Версия") { Text(AppVersion.versionName) }
-                        LabeledContent("Сборка") {
-                            Text("\(AppVersion.buildNumber) · \(AppVersion.buildChannel)")
-                        }
-                        LabeledContent("Коммит") { Text(AppVersion.commitSha) }
-                    }
-                    Section("Уведомления") {
-                        LabeledContent("Запланировано") {
-                            Text("\(notificationPlan.total) из \(NotificationPlanner.systemLimit)")
-                        }
-                        if notificationPlan.trimmed {
-                            Label("Бюджет плотный — интервалы укрупнены",
-                                  systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                        ForEach(store.data.medications) { med in
-                            Button {
-                                editingMed = med
-                            } label: {
-                                HStack {
-                                    Text(med.name)
-                                        .foregroundStyle(.primary)
-                                    Spacer()
-                                    Text(medWindowText(med))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                }
+                            HStack(spacing: 10) {
+                                Circle().fill(med.accent).frame(width: 10, height: 10)
+                                Text(med.name).foregroundStyle(.primary)
+                                Spacer()
+                                Text(med.unit.title)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
-                        Stepper("Горизонт: \(store.data.settings.notifyHorizonDays) дн.",
-                                value: horizonBinding, in: 1...7)
-                        if let auth = authStatus, auth != .authorized, auth != .provisional {
-                            Button("Разрешение не выдано — открыть настройки") {
-                                if let url = URL(string: UIApplication.openSettingsURLString) {
-                                    UIApplication.shared.open(url)
-                                }
-                            }
+                    }
+                    Button {
+                        creatingMed = true
+                    } label: {
+                        Label("Добавить лекарство", systemImage: "plus.circle")
+                    }
+                    ForEach(sortedPlans) { plan in
+                        NavigationLink {
+                            PlanGridView(plan: plan)
+                        } label: {
+                            planRow(plan)
+                        }
+                    }
+                    Button {
+                        showConstructor = true
+                    } label: {
+                        Label("Новый блок", systemImage: "plus.circle")
+                    }
+                }
+                Section("Уведомления") {
+                    LabeledContent("Запланировано") {
+                        Text("\(notificationPlan.total) из \(NotificationPlanner.systemLimit)")
+                    }
+                    if notificationPlan.trimmed {
+                        Label("Бюджет плотный — интервалы укрупнены",
+                              systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.orange)
-                        }
                     }
+                    Stepper("Горизонт: \(store.data.settings.notifyHorizonDays) дн.",
+                            value: horizonBinding, in: 1...7)
+                    if let auth = authStatus, auth != .authorized, auth != .provisional {
+                        Button("Разрешение не выдано — открыть настройки") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    }
+                }
+                Section("Синхронизация") {
+                    LabeledContent("Статус") {
+                        Text(store.sync.isAvailable ? "подключена" : "не подключена")
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Модуль зарезервирован на будущее: данные живут на устройстве, сервер подключим без смены схемы хранения.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Данные") {
+                    Button {
+                        exportBackup()
+                    } label: {
+                        Label("Экспорт данных (JSON)", systemImage: "square.and.arrow.up")
+                    }
+                    Button {
+                        showImporter = true
+                    } label: {
+                        Label("Импорт плана или бэкапа", systemImage: "square.and.arrow.down")
+                    }
+                    LabeledContent("Лекарств") { Text("\(store.data.medications.count)") }
+                    LabeledContent("Планов") { Text("\(store.data.plans.count)") }
+                    LabeledContent("Отметок") { Text("\(store.data.intakes.count)") }
+                }
+                Section("Приложение") {
+                    LabeledContent("Версия") { Text(AppVersion.versionName) }
+                    LabeledContent("Сборка") {
+                        Text("\(AppVersion.buildNumber) · \(AppVersion.buildChannel)")
+                    }
+                    LabeledContent("Коммит") { Text(AppVersion.commitSha) }
+                }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Настройки")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Готово") { dismiss() }
-                }
-            }
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
                 handleImport(result)
             }
@@ -115,7 +140,13 @@ struct SettingsView: View {
                 MedPlanImportSheet(file: pending.file, data: pending.data)
             }
             .sheet(item: $editingMed) { med in
-                NotifySettingsSheet(medication: med)
+                MedicationEditSheet(medication: med)
+            }
+            .sheet(isPresented: $creatingMed) {
+                MedicationEditSheet(medication: nil)
+            }
+            .sheet(isPresented: $showConstructor) {
+                PlanConstructorView()
             }
             .task {
                 authStatus = await UNUserNotificationCenter.current()
@@ -148,6 +179,29 @@ struct SettingsView: View {
         }
     }
 
+    private func planRow(_ plan: Plan) -> some View {
+        let state = PlanStatus.state(of: plan, on: .today())
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(plan.name)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                if let start = plan.startDate {
+                    Text("с \(start.description) · \(plan.durationDays) дн.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("черновик — ещё не начат")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            GlassBadge(label: state.label, icon: state.icon, color: state.color)
+        }
+        .padding(.vertical, 2)
+    }
+
     private var notificationPlan: NotificationPlan {
         NotificationPlanner.plan(data: store.data)
     }
@@ -155,13 +209,6 @@ struct SettingsView: View {
     private var horizonBinding: Binding<Int> {
         Binding(get: { store.data.settings.notifyHorizonDays },
                 set: { newValue in try? store.setNotifyHorizon(days: newValue) })
-    }
-
-    private func medWindowText(_ med: Medication) -> String {
-        guard let w = med.notifyWindow else { return "выкл" }
-        let slots = notificationPlan.perMedication[med.id] ?? 0
-        return String(format: "%02d–%02d · %d мин · %d сл.",
-                      w.startHour, w.endHour, w.intervalMinutes, slots)
     }
 
     private func exportBackup() {

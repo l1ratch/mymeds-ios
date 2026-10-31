@@ -2,151 +2,95 @@ import SwiftUI
 import MyMedsCore
 import DesignSystem
 
-/// Аналитика (§7/§12): свёртка по entries + оверлеи + heatmap + маскот.
+/// Аналитика (решение 31.10.2026): подробная понятная сводка — одна глобальная
+/// карточка за всю историю курса + карточка по каждому блоку + строки по
+/// лекарствам с оверлеями (§7). Без переключателей периода: глобально = вся
+/// история, детализацию дают блоки.
 struct AnalyticsView: View {
     @Environment(DataStore.self) private var store
-    @State private var periodDays = 30
-    @State private var selectedDay: CalendarView.SelectedDay?
 
     private var today: CivilDate { .today() }
 
-    private struct Period: Identifiable {
-        let days: Int
-        let label: String
-        var id: Int { days }
-    }
-
-    private let periods = [
-        Period(days: 7, label: "Неделя"),
-        Period(days: 30, label: "Месяц"),
-        Period(days: 90, label: "90 дней"),
-        Period(days: 0, label: "Всё"),
-    ]
-
-    private var periodStart: CivilDate {
-        if periodDays == 0 {
-            return store.data.plans.compactMap(\.startDate).min() ?? today
-        }
-        return today.adding(days: -(periodDays - 1))
-    }
-
     private var adherence: AdherenceStats {
-        Analytics.adherence(data: store.data, from: periodStart, to: today, today: today)
+        let start = store.data.plans.compactMap(\.startDate).min() ?? today
+        return Analytics.adherence(data: store.data, from: start, to: today, today: today)
     }
 
-    private var streak: Int {
-        Analytics.currentStreak(data: store.data, today: today)
+    private var sortedPlans: [Plan] {
+        store.data.plans.sorted {
+            ($0.startDate?.daysSinceEpoch ?? Int.max) < ($1.startDate?.daysSinceEpoch ?? Int.max)
+        }
     }
 
     var body: some View {
-        List {
-            Section {
-                periodPicker
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-            }
-            Section {
-                adherenceCard
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-            }
-            Section {
-                streakRow
-                LabeledContent("Среднее время отметки") {
-                    Text(medianTimeText)
-                        .foregroundStyle(.secondary)
+        NavigationStack {
+            List {
+                Section {
+                    globalCard
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
+                Section("По блокам") {
+                    ForEach(sortedPlans) { plan in
+                        NavigationLink {
+                            PlanGridView(plan: plan)
+                        } label: {
+                            blockCard(plan)
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    }
+                }
+                Section("По лекарствам") {
+                    ForEach(store.data.medications) { med in
+                        medRow(med)
+                    }
                 }
             }
-            Section("Текущий месяц") {
-                heatmapCard
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-            }
-            Section("По лекарствам") {
-                ForEach(store.data.medications) { med in
-                    medRow(med)
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle("Аналитика")
-        .sheet(item: $selectedDay) { day in
-            CalendarDaySheet(date: day.date)
+            .listStyle(.insetGrouped)
+            .navigationTitle("Аналитика")
         }
     }
 
-    private var periodPicker: some View {
-        Picker("", selection: $periodDays) {
-            ForEach(periods, id: \.days) { period in
-                Text(period.label).tag(period.days)
-            }
-        }
-        .pickerStyle(.segmented)
-    }
+    // MARK: - Глобальная карточка
 
-    private var adherenceCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
+    private var globalCard: some View {
+        let streak = Analytics.currentStreak(data: store.data, today: today)
+        return GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 16) {
-                    GlassProgressRing(
-                        progress: adherence.adherence ?? 0,
-                        size: 72,
-                        caption: "адгереция")
+                    GlassProgressRing(progress: adherence.adherence ?? 0,
+                                      size: 72,
+                                      caption: "адгереция")
                     VStack(alignment: .leading, spacing: 4) {
                         Text(adherence.adherence == nil
-                             ? "нет решённых дней"
-                             : String(format: "%.0f%% — принято от решённых дней",
-                                      (adherence.adherence ?? 0) * 100))
-                            .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                             ? "Ещё нет решённых дней"
+                             : "\(Int((adherence.adherence ?? 0) * 100))% решённых дней принято")
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
-                        Text("taken / (taken + skipped + missed)")
-                            .font(.caption2)
+                        Text("по всей истории курса")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                 }
                 HStack(spacing: 8) {
-                    GlassBadge(label: "\(adherence.taken)", icon: "checkmark", color: .green)
-                    GlassBadge(label: "\(adherence.skipped)", icon: "xmark", color: .orange)
-                    GlassBadge(label: "\(adherence.missed)", icon: "exclamationmark", color: .red)
+                    GlassBadge(label: "\(adherence.taken) принято", icon: "checkmark", color: .green)
+                    GlassBadge(label: "\(adherence.skipped) пропущено", icon: "xmark", color: .orange)
+                    GlassBadge(label: "\(adherence.missed) без отметки", icon: "exclamationmark", color: .red)
                     Spacer(minLength: 0)
                 }
-            }
-        }
-    }
-
-    private var streakRow: some View {
-        HStack(spacing: 14) {
-            MascotView(streak: streak, size: 1.3)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Серия")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                Text(streak == 0
-                     ? "Отметь все приёмы сегодня — огонёк оживёт"
-                     : "\(streak) дн. подряд всё принято")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 4)
-    }
-
-    private var heatmapCard: some View {
-        let anchor = CivilDate(year: today.year, month: today.month, day: 1)
-        let cells = MonthLayout.cells(anchor: anchor)
-        let lookup = MonthLayout.summaries(data: store.data, cells: cells, today: today)
-        return GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(MonthLayout.title(anchor: anchor))
-                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                    .foregroundStyle(.primary)
-                HeatmapGrid(cells: cells, summaries: lookup, today: today) { date in
-                    selectedDay = CalendarView.SelectedDay(date: date)
+                Divider()
+                HStack {
+                    Label(streak == 0 ? "серия сброшена" : "серия \(streak) дн.",
+                          systemImage: streak > 0 ? "flame.fill" : "flame")
+                        .font(.caption)
+                        .foregroundStyle(streak > 0 ? .orange : .secondary)
+                    Spacer()
+                    Label(medianTimeText, systemImage: "clock")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -157,8 +101,52 @@ struct AnalyticsView: View {
         return String(format: "%02d:%02d", minutes / 60, minutes % 60)
     }
 
-    /// Оверлеи по лекарствам: кумулятивная доза всегда; % цели, мг/кг и прогноз —
-    /// только если поля заполнены (§7).
+    // MARK: - Карточка блока
+
+    private func blockCard(_ plan: Plan) -> some View {
+        let stats = Stats.planStats(plan: plan, data: store.data, today: today)
+        let med = store.medication(plan.medicationId)
+        let state = PlanStatus.state(of: plan, on: today)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(plan.name)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                if let med {
+                    Text(med.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                GlassBadge(label: state.label, icon: state.icon, color: state.color)
+            }
+            if let start = plan.startDate, let last = PlanStatus.lastDay(of: plan) {
+                Text("\(start.description) – \(last.description) · день \(stats.elapsedDays) из \(plan.durationDays)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ProgressView(value: stats.progress)
+                .tint(med?.accent ?? Palette.primary)
+            HStack {
+                Text("\(stats.taken) принято · \(stats.skipped) пропущено · \(stats.missed) без отметки")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Text(doseText(stats.cumulativeDose, unit: med?.unit ?? .mg))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.primary)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                .fill(Palette.surface)
+        )
+        .padding(.vertical, 2)
+    }
+
+    // MARK: - Строка лекарства (оверлеи §7)
+
     private func medRow(_ med: Medication) -> some View {
         let overlay = Analytics.overlay(medicationId: med.id, data: store.data, today: today)
         return VStack(alignment: .leading, spacing: 6) {
