@@ -71,7 +71,7 @@ struct MedicationEditSheet: View {
             } message: {
                 Text(errorText ?? "")
             }
-            .onAppear(load)
+            .onAppear(perform: load)
         }
     }
 
