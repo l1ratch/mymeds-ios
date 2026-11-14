@@ -129,6 +129,9 @@ struct SettingsView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: 56)   // контент не уходит под TabView
+            }
             .navigationTitle("Настройки")
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
                 handleImport(result)

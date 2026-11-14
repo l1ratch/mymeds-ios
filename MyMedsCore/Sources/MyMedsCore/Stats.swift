@@ -115,4 +115,30 @@ public enum Stats {
         }
         return DaySummary(date: date, total: entries.count, taken: taken)
     }
+
+    /// Все дни курса за один проход (траектория календаря). Ключ — daysSinceEpoch.
+    /// Индекс отметок строится один раз, поэтому стоимость O(дни × планы), а не
+    /// O(дни × планы × отметки) — на курсе в 200 дней это разница в десятки раз.
+    public static func trajectorySummaries(data: AppData, from: CivilDate, to: CivilDate,
+                                           today: CivilDate = .today()) -> [Int: DaySummary] {
+        var index: [String: Intake] = [:]
+        for intake in data.intakes {
+            index["\(intake.planId.uuidString)#\(intake.day)"] = intake
+        }
+        var out: [Int: DaySummary] = [:]
+        var date = from
+        while date <= to {
+            let entries = DayResolver.entries(plans: data.plans, on: date)
+            var taken = 0
+            for entry in entries {
+                if let intake = index["\(entry.planId.uuidString)#\(entry.day)"],
+                   StatusResolver.status(intake: intake, on: date, today: today) == .taken {
+                    taken += 1
+                }
+            }
+            out[date.daysSinceEpoch] = DaySummary(date: date, total: entries.count, taken: taken)
+            date = date.adding(days: 1)
+        }
+        return out
+    }
 }

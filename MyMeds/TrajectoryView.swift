@@ -6,69 +6,69 @@ import DesignSystem
 /// курса с узлами-днями вместо сетки-heatmap. Сегодня — первый блок, развёрнут:
 /// общая сводка + лекарства с кнопками «принял / пропустил / изменить».
 /// Остальные дни — свёрнутые блоки на той же траектории; тап раскрывает день.
+///
+/// Прозводительность: сводки всех дней и streak считаются ОДИН раз в `model`
+/// (на появление и на изменение данных), а не на каждый рендер строки.
 struct TrajectoryView: View {
     @Environment(DataStore.self) private var store
     @State private var expanded: CivilDate? = .today()
     @State private var detailItem: DataStore.DayItem?
     @State private var errorText: String?
+    @State private var model = TrajectoryModel.empty
     var openSettings: () -> Void = {}
 
-    private var today: CivilDate { .today() }
+    /// Всё, что дорого считать, лежит здесь и обновляется только при смене данных.
+    struct TrajectoryModel {
+        var summaries: [Int: DaySummary] = [:]
+        var futureDays: [CivilDate] = []
+        var pastDays: [CivilDate] = []
+        var today: CivilDate = .today()
+        var courseStart: CivilDate?
+        var streak: Int = 0
 
-    private var courseStart: CivilDate? { store.data.plans.compactMap(\.startDate).min() }
-    private var courseEnd: CivilDate {
-        max(store.data.plans.compactMap { PlanStatus.lastDay(of: $0) }.max() ?? today, today)
+        static let empty = TrajectoryModel()
     }
 
-    private var futureDays: [CivilDate] {
-        var out: [CivilDate] = []
-        var d = today.adding(days: 1)
-        while d <= courseEnd && out.count < 500 { out.append(d); d = d.adding(days: 1) }
-        return out
-    }
-
-    private var pastDays: [CivilDate] {
-        guard let start = courseStart else { return [] }
-        var out: [CivilDate] = []
-        var d = today.adding(days: -1)
-        while d >= start && out.count < 500 { out.append(d); d = d.adding(days: -1) }
-        return out
-    }
+    private var today: CivilDate { model.today }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 AppBackground()
-                if courseStart == nil {
+                if model.courseStart == nil {
                     emptyState
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             dayRow(today, isFirst: true,
-                                   isLast: futureDays.isEmpty && pastDays.isEmpty)
-                            if !futureDays.isEmpty {
+                                   isLast: model.futureDays.isEmpty && model.pastDays.isEmpty)
+                            if !model.futureDays.isEmpty {
                                 groupHeader("Впереди")
-                                ForEach(futureDays.indices, id: \.self) { i in
-                                    dayRow(futureDays[i], isFirst: i == 0,
-                                           isLast: i == futureDays.count - 1 && pastDays.isEmpty)
+                                ForEach(model.futureDays.indices, id: \.self) { i in
+                                    dayRow(model.futureDays[i], isFirst: i == 0,
+                                           isLast: i == model.futureDays.count - 1 && model.pastDays.isEmpty)
                                 }
                             }
-                            if !pastDays.isEmpty {
+                            if !model.pastDays.isEmpty {
                                 groupHeader("История")
-                                ForEach(pastDays.indices, id: \.self) { i in
-                                    dayRow(pastDays[i], isFirst: i == 0,
-                                           isLast: i == pastDays.count - 1)
+                                ForEach(model.pastDays.indices, id: \.self) { i in
+                                    dayRow(model.pastDays[i], isFirst: i == 0,
+                                           isLast: i == model.pastDays.count - 1)
                                 }
                             }
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
+                        // Контент не должен уходить под плавающий TabView
+                        .padding(.bottom, 72)
                     }
                 }
             }
             .navigationTitle("Календарь")
             .sheet(item: $detailItem) { DayDetailSheet(item: $0) }
+            .task { rebuild() }
             .onChange(of: store.data) { _, _ in
+                rebuild()
                 NotificationSetup.reschedule()
             }
             .alert("Ошибка", isPresented: errorBinding) {
@@ -79,6 +79,31 @@ struct TrajectoryView: View {
         }
     }
 
+    /// Один пересчёт на смену данных: дни курса + сводки + streak.
+    private func rebuild() {
+        let now = CivilDate.today()
+        let start = store.data.plans.compactMap(\.startDate).min()
+        let end = max(store.data.plans.compactMap { PlanStatus.lastDay(of: $0) }.max() ?? now, now)
+        var future: [CivilDate] = []
+        var d = now.adding(days: 1)
+        while d <= end && future.count < 500 { future.append(d); d = d.adding(days: 1) }
+        var past: [CivilDate] = []
+        if let start {
+            d = now.adding(days: -1)
+            while d >= start && past.count < 500 { past.append(d); d = d.adding(days: -1) }
+        }
+        let summaries = start == nil
+            ? [:]
+            : Stats.trajectorySummaries(data: store.data, from: start!, to: end, today: now)
+        model = TrajectoryModel(
+            summaries: summaries,
+            futureDays: future,
+            pastDays: past,
+            today: now,
+            courseStart: start,
+            streak: Analytics.currentStreak(data: store.data, today: now))
+    }
+
     private var errorBinding: Binding<Bool> {
         Binding(get: { errorText != nil }, set: { if !$0 { errorText = nil } })
     }
@@ -86,7 +111,8 @@ struct TrajectoryView: View {
     // MARK: - Строка траектории
 
     private func dayRow(_ date: CivilDate, isFirst: Bool, isLast: Bool) -> some View {
-        let summary = Stats.daySummary(data: store.data, on: date, today: today)
+        let summary = model.summaries[date.daysSinceEpoch]
+            ?? DaySummary(date: date, total: 0, taken: 0)
         return HStack(alignment: .top, spacing: 12) {
             nodeColumn(date: date, summary: summary, isFirst: isFirst, isLast: isLast)
             dayCard(date: date, summary: summary, isExpanded: expanded == date)
@@ -194,7 +220,7 @@ struct TrajectoryView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
-                    MascotView(streak: Analytics.currentStreak(data: store.data))
+                    MascotView(streak: model.streak)
                 }
                 .padding(.top, 10)
                 Divider().padding(.vertical, 4)
@@ -282,7 +308,7 @@ struct TrajectoryView: View {
             Text("Курс ещё не начат")
                 .font(.headline)
                 .foregroundStyle(.primary)
-            Text("Создайте блок в настройках — и здесь появится траектория приёма по дням.")
+            Text("Создайте блок в настройках или импортируйте бэкап — и здесь появится траектория приёма по дням.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

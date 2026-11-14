@@ -8,6 +8,14 @@ public struct AdherenceStats: Equatable, Sendable {
     public let skipped: Int
     public let missed: Int
 
+    public init(taken: Int = 0, skipped: Int = 0, missed: Int = 0) {
+        self.taken = taken
+        self.skipped = skipped
+        self.missed = missed
+    }
+
+    public static let empty = AdherenceStats()
+
     public var total: Int { taken + skipped + missed }
 
     /// nil — за период нет ни одного решённого дня (нечем считать).
@@ -44,20 +52,23 @@ public enum Analytics {
     /// пока он в прогрессе (только pending), цепочку не рвёт и не считается;
     /// явный skip сегодня — рвёт.
     public static func currentStreak(data: AppData, today: CivilDate = .today()) -> Int {
+        let floor = data.plans.compactMap(\.startDate).min()
+        guard let floor else { return 0 }        // нет курса — нечего считать
+        var index: [String: Intake] = [:]
+        for mark in data.intakes {
+            index["\(mark.planId.uuidString)#\(mark.day)"] = mark
+        }
         var streak = 0
         var date = today
-        let floor = data.plans.compactMap(\.startDate).min()
-        var guardIterations = 0
-        while guardIterations < 5000 {
-            guardIterations += 1
-            if let floor, date < floor { break }
+        while date >= floor {
             let dayEntries = entries(data, on: date, medicationId: nil)
             if dayEntries.isEmpty {
                 date = date.adding(days: -1)     // окно между блоками — не разрыв
                 continue
             }
             let statuses = dayEntries.map {
-                StatusResolver.status(intake: intake(data, $0), on: date, today: today)
+                StatusResolver.status(intake: index["\($0.planId.uuidString)#\($0.day)"],
+                                      on: date, today: today)
             }
             if statuses.allSatisfy({ $0 == .taken }) {
                 streak += 1

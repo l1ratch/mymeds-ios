@@ -9,12 +9,22 @@ import DesignSystem
 struct AnalyticsView: View {
     @Environment(DataStore.self) private var store
 
-    private var today: CivilDate { .today() }
+    /// Дорогие свёртки (адгереция по всей истории, streak, медиана) считаются
+    /// один раз на смену данных, а не на каждый рендер списка.
+    @State private var summary = AnalyticsModel.empty
 
-    private var adherence: AdherenceStats {
-        let start = store.data.plans.compactMap(\.startDate).min() ?? today
-        return Analytics.adherence(data: store.data, from: start, to: today, today: today)
+    struct AnalyticsModel {
+        var adherence = AdherenceStats(taken: 0, skipped: 0, missed: 0)
+        var streak = 0
+        var medianText = "—"
+        var today: CivilDate = .today()
+
+        static let empty = AnalyticsModel()
     }
+
+    private var today: CivilDate { summary.today }
+
+    private var adherence: AdherenceStats { summary.adherence }
 
     private var sortedPlans: [Plan] {
         store.data.plans.sorted {
@@ -32,31 +42,65 @@ struct AnalyticsView: View {
                         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 }
                 Section("По блокам") {
-                    ForEach(sortedPlans) { plan in
-                        NavigationLink {
-                            PlanGridView(plan: plan)
-                        } label: {
-                            blockCard(plan)
+                    if sortedPlans.isEmpty {
+                        emptyHint("Блоков пока нет — создайте блок в настройках")
+                    } else {
+                        ForEach(sortedPlans) { plan in
+                            NavigationLink {
+                                PlanGridView(plan: plan)
+                            } label: {
+                                blockCard(plan)
+                            }
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                         }
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
                     }
                 }
                 Section("По лекарствам") {
-                    ForEach(store.data.medications) { med in
-                        medRow(med)
+                    if store.data.medications.isEmpty {
+                        emptyHint("Лекарств пока нет — добавьте в настройках")
+                    } else {
+                        ForEach(store.data.medications) { med in
+                            medRow(med)
+                        }
                     }
                 }
             }
             .listStyle(.insetGrouped)
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: 56)   // контент не уходит под TabView
+            }
             .navigationTitle("Аналитика")
+            .task { rebuild() }
+            .onChange(of: store.data) { _, _ in rebuild() }
         }
+    }
+
+    private func rebuild() {
+        let now = CivilDate.today()
+        let start = store.data.plans.compactMap(\.startDate).min() ?? now
+        let medianText: String = {
+            guard let minutes = Analytics.medianMarkMinutes(data: store.data) else { return "—" }
+            return String(format: "%02d:%02d", minutes / 60, minutes % 60)
+        }()
+        summary = AnalyticsModel(
+            adherence: Analytics.adherence(data: store.data, from: start, to: now, today: now),
+            streak: Analytics.currentStreak(data: store.data, today: now),
+            medianText: medianText,
+            today: now)
+    }
+
+    private func emptyHint(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 4)
     }
 
     // MARK: - Глобальная карточка
 
     private var globalCard: some View {
-        let streak = Analytics.currentStreak(data: store.data, today: today)
+        let streak = summary.streak
         return GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 16) {
@@ -88,17 +132,12 @@ struct AnalyticsView: View {
                         .font(.caption)
                         .foregroundStyle(streak > 0 ? .orange : .secondary)
                     Spacer()
-                    Label(medianTimeText, systemImage: "clock")
+                    Label(summary.medianText, systemImage: "clock")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
         }
-    }
-
-    private var medianTimeText: String {
-        guard let minutes = Analytics.medianMarkMinutes(data: store.data) else { return "—" }
-        return String(format: "%02d:%02d", minutes / 60, minutes % 60)
     }
 
     // MARK: - Карточка блока
