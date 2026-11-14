@@ -22,6 +22,12 @@ public struct DaySummary: Equatable, Sendable {
     public let total: Int
     public let taken: Int
 
+    public init(date: CivilDate, total: Int, taken: Int) {
+        self.date = date
+        self.total = total
+        self.taken = taken
+    }
+
     public var fraction: Double? {
         total == 0 ? nil : Double(taken) / Double(total)
     }
